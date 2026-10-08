@@ -1,0 +1,58 @@
+# ISE .github/workflows/barrier.yml me le jayen (README me tareeka likha hai)
+name: USDJPY barrier (hourly)
+
+on:
+  schedule:
+    - cron: "7 * * * 0-5"        # har ghante, 7 minute par (Ravi-Shukr UTC); weekend par bot khud 'market band' bolta hai
+  workflow_dispatch:
+
+concurrency:
+  group: barrier-bot
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  signal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: pip install -r requirements.txt
+
+      - name: State wapas lao (bars, model, purane anumaan)
+        run: bash state_restore.sh
+
+      - name: Signal nikalo
+        env:
+          DATA_DIR: usdjpy_data
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          OANDA_TOKEN: ${{ secrets.OANDA_TOKEN }}
+          TWELVE_KEY: ${{ secrets.TWELVE_KEY }}
+          DATA_SOURCE: ${{ vars.DATA_SOURCE || 'yahoo' }}
+          BARRIER_THR: ${{ vars.BARRIER_THR || '0.60' }}
+          BARRIER_COST_PIP: ${{ vars.BARRIER_COST_PIP || '0.3' }}
+        run: python usdjpy_barrier.py predict
+
+      - name: Natija summary me dikhao
+        if: always()
+        run: |
+          echo '### USDJPY barrier signal' >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat usdjpy_data/barrier_latest.json >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo 'abhi koi signal file nahi' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: State save karo
+        if: always()
+        env:
+          DATA_DIR: usdjpy_data
+          STATE_PUSH_URL: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+        run: bash state_save.sh
